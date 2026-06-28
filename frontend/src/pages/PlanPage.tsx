@@ -1,101 +1,70 @@
 import { useState } from 'react'
-import { CalendarIcon, PlusIcon, AcademicCapIcon } from '@heroicons/react/24/solid'
-
-interface DailyPlan {
-  id: string
-  date: string
-  tasks: PlanTask[]
-}
-
-interface PlanTask {
-  id: string
-  title: string
-  description: string
-  duration: number
-  completed: boolean
-}
+import { CalendarIcon, PlusIcon, AcademicCapIcon, LightBulbIcon, ClockIcon } from '@heroicons/react/24/solid'
+import { plannerService } from '../services/plannerService'
+import { TaskPlan, DailyChunk } from '../services/plannerService'
 
 export default function PlanPage() {
-  const [tasks, setTasks] = useState<PlanTask[]>([])
+  const [tasks, setTasks] = useState<{ id: string; title: string }[]>([])
   const [showForm, setShowForm] = useState(false)
   const [title, setTitle] = useState('')
   const [deadline, setDeadline] = useState('')
   const [description, setDescription] = useState('')
+  const [plan, setPlan] = useState<TaskPlan | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  const handleAddTask = (e: React.FormEvent) => {
+  const handleGeneratePlan = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    // Parse description to create subtasks
-    const subtasks = generateSubtasks(title, description, deadline)
-    setTasks([...tasks, ...subtasks])
-    
-    setTitle('')
-    setDeadline('')
-    setDescription('')
-    setShowForm(false)
-  }
+    if (!title.trim() || !deadline) return
 
-  const generateSubtasks = (mainTitle: string, desc: string, date: string): PlanTask[] => {
-    // Simple AI to parse chapters/difficulty from description
-    const subtasks: PlanTask[] = []
-    const chaptersMatch = desc.match(/(\d+)\s*chapters?/i)
-    const numChapters = chaptersMatch ? parseInt(chaptersMatch[1]) : 3
-    
-    // Parse difficulty keywords
-    const difficultMatch = desc.match(/(\d+)\s*(?:difficult|hard)/i)
-    const numDifficult = difficultMatch ? parseInt(difficultMatch[1]) : 0
-    
-    const easyMatch = desc.match(/(\d+)\s*(?:easy|simple)/i)
-    const numEasy = easyMatch ? parseInt(easyMatch[1]) : numChapters - numDifficult
-    
-    const deadlineDate = new Date(date)
-    const today = new Date()
-    const daysDiff = Math.max(1, Math.ceil((deadlineDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)))
-    
-    // Distribute chapters across days
-    const chaptersPerDay = Math.ceil(numChapters / daysDiff)
-    let chapterNum = 1
-    
-    for (let day = 0; day < daysDiff && chapterNum <= numChapters; day++) {
-      for (let i = 0; i < chaptersPerDay && chapterNum <= numChapters; i++) {
-        const isDifficult = chapterNum <= numDifficult
-        const duration = isDifficult ? 90 : 60
-        
-        subtasks.push({
-          id: `task-${Date.now()}-${chapterNum}`,
-          title: `${mainTitle} - Chapter ${chapterNum}`,
-          description: isDifficult ? 'Difficult chapter (extra time needed)' : 'Standard reading',
-          duration: duration,
-          completed: false
-        })
-        
-        chapterNum++
-      }
+    setIsLoading(true)
+    setError('')
+
+    try {
+      const deadlineDate = new Date(deadline)
+      const response = await plannerService.generateDirectPlan(
+        title,
+        description,
+        deadlineDate.toISOString(),
+        3  // 3 hours per day
+      )
+
+      setPlan(response.plan)
+      setTasks(prev => [...prev, { id: response.plan.task_id || Date.now().toString(), title }])
+
+      // Reset form
+      setTitle('')
+      setDeadline('')
+      setDescription('')
+      setShowForm(false)
+    } catch (err: any) {
+      console.error('Plan generation failed:', err)
+      setError(err.response?.data?.detail || err.message || 'Failed to generate plan')
+    } finally {
+      setIsLoading(false)
     }
-    
-    return subtasks
   }
 
-  // Group tasks by day (simplified - groups sequential tasks)
   const getTodaysTasks = () => {
-    return tasks.slice(0, 3) // Show first 3 as "today's"
+    if (!plan) return []
+    const today = new Date().toISOString().split('T')[0]
+    return plan.daily_chunks.filter(chunk => chunk.date.toString().startsWith(today))
   }
 
-  const formatDate = (dateStr: string) => {
-    if (!dateStr) return ''
-    return new Date(dateStr).toLocaleDateString()
-  }
+  const todayChunks = getTodaysTasks()
+  const completedTasks = plan?.daily_chunks.reduce((acc, chunk) =>
+    acc + chunk.subtask_names.filter(() => false).length, 0) || 0
 
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-6">
       <div className="flex items-center justify-between">
-       tracker        <h1 className="text-3xl font-bold text-white flex items-center gap-2">
-          <CalendarIcon className="h-8 w-8 text-purple-500" />
+        <h1 className="text-3xl font-bold text-white flex items-center gap-2 text-glow">
+          <CalendarIcon className="h-8 w-8 icon-accent" />
           Task Planner & Calendar
         </h1>
-        <button 
+        <button
           onClick={() => setShowForm(!showForm)}
-          className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center gap-2"
+          className="btn-primary flex items-center gap-2"
         >
           <PlusIcon className="h-5 w-5" />
           Add Task
@@ -104,100 +73,183 @@ export default function PlanPage() {
 
       {/* Add Task Form */}
       {showForm && (
-        <form onSubmit={handleAddTask} className="bg-gray-800 p-6 rounded-xl space-y-4">
+        <form onSubmit={handleGeneratePlan} className="card-elevated space-y-4">
           <h3 className="text-xl font-semibold text-white">Add New Task</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="block text-sm font-medium text-gray-300">Task Title</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g., Math Exam Prep"
-                className="w-full px-4 py-2 rounded-lg bg-gray-700 text-white border border-gray-600"
-                required 
+                className="input"
+                required
               />
             </div>
             <div className="space-y-2">
               <label className="block text-sm font-medium text-gray-300">Deadline</label>
-              <input 
-                type="date" 
+              <input
+                type="date"
                 value={deadline}
                 onChange={(e) => setDeadline(e.target.value)}
-                className="w-full px-4 py-2 rounded-lg bg-gray-700 text-white border border-gray-600"
-                required 
+                className="input"
+                required
               />
             </div>
           </div>
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-300">Description</label>
-            <textarea 
+            <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Describe your task. Example: 6 chapters to study, 3 are difficult and 2 are easy"
-              className="w-full px-4 py-2 rounded-lg bg-gray-700 text-white border border-gray-600"
+              className="input"
               rows={3}
-              required 
+              required
             />
             <p className="text-xs text-gray-400">
-              Tip: Include chapter count and difficulty (e.g., "6 chapters, 3 difficult, 2 easy")
+              Tip: Include chapter count and difficulty
             </p>
           </div>
-          <button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg font-semibold">
-            Generate Plan
+          <button type="submit" className="w-full btn-primary py-2" disabled={isLoading}>
+            {isLoading ? 'Generating Plan...' : 'Generate Plan'}
           </button>
+          {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
         </form>
       )}
 
-      {/* Calendar View */}
-      <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+      {/* Today's Schedule */}
+      <div className="card-elevated">
         <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-          <AcademicCapIcon className="h-6 w-6 text-blue-500" />
+          <AcademicCapIcon className="h-6 w-6 icon-primary" />
           Today's Schedule
         </h2>
-        
-        {getTodaysTasks().length > 0 ? (
+
+        {todayChunks.length > 0 ? (
           <div className="space-y-3">
-            {getTodaysTasks().map((task) => (
-              <div 
-                key={task.id} 
-                className="bg-gray-700 p-4 rounded-lg border border-gray-600 hover:border-blue-500 transition-colors"
+            {todayChunks.map((chunk, idx) => (
+              <div
+                key={idx}
+                className="bg-dark-elevated p-4 rounded-lg border border-primary/30 hover:border-primary transition-colors"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className={`w-4 h-4 rounded-full ${task.completed ? 'bg-green-500' : 'bg-blue-500'}`} />
+                    <div className="w-4 h-4 rounded-full bg-gradient-to-r from-primary to-primary-light shadow-glow" />
                     <div>
-                      <h3 className="text-white font-medium">{task.title}</h3>
-                      <p className="text-sm text-gray-400">{task.description}</p>
+                      {chunk.subtask_names.map((name, i) => (
+                        <h3 key={i} className="text-white font-medium">{name}</h3>
+                      ))}
+                      <p className="text-sm text-gray-300">{chunk.notes}</p>
                     </div>
                   </div>
-                  <span className="text-sm text-gray-400">{task.duration} min</span>
+                  <span className="text-sm text-primary-light">{chunk.total_minutes} min</span>
                 </div>
               </div>
             ))}
           </div>
+        ) : plan ? (
+          <div className="text-center py-8">
+            <CalendarIcon className="h-12 w-12 text-dark-hover mx-auto mb-3" />
+            <p className="text-gray-400">No tasks scheduled for today</p>
+          </div>
         ) : (
           <div className="text-center py-8">
-            <CalendarIcon className="h-12 w-12 text-gray-600 mx-auto mb-3" />
-            <p className="text-gray-400">No tasks scheduled for today</p>
-            <p className="text-sm text-gray-500 mt-1">Add a task to see your plan!</p>
+            <LightBulbIcon className="h-12 w-12 text-dark-hover mx-auto mb-3" />
+            <p className="text-gray-400">Generate a plan to see your schedule!</p>
           </div>
         )}
       </div>
 
+      {/* Full Plan Timeline */}
+      {plan && (
+        <div className="card-elevated space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <ClockIcon className="h-6 w-6 icon-primary" />
+              {plan.title} — Plan Overview
+            </h2>
+            <span className="text-sm text-primary-light">
+              {plan.overall_duration_days} days
+            </span>
+          </div>
+
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {plan.daily_chunks.map((chunk, idx) => (
+              <div
+                key={idx}
+                className={`p-4 rounded-lg border ${
+                  chunk.is_buffer
+                    ? 'bg-dark-surface border-primary/30'
+                    : 'bg-dark-elevated border-primary/30 hover:border-primary'
+                } transition-colors`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-white font-medium">
+                    {new Date(chunk.date).toLocaleDateString('en-US', {
+                      weekday: 'short',
+                      month: 'short',
+                      day: 'numeric'
+                    })}
+                    {chunk.is_buffer && (
+                      <span className="ml-2 text-xs text-primary-light bg-primary/10 px-2 py-0.5 rounded">
+                        Buffer
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-sm text-primary-light">{chunk.total_minutes} min</span>
+                </div>
+                <p className="text-sm text-gray-300 mb-2">{chunk.notes}</p>
+                {chunk.subtask_names.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {chunk.subtask_names.map((name, i) => (
+                      <span
+                        key={i}
+                        className="px-2 py-1 bg-dark-surface text-xs text-gray-300 rounded border border-primary/20"
+                      >
+                        {name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* AI Insights */}
+          {plan.insights.length > 0 && (
+            <div className="mt-4 p-4 bg-dark-surface rounded-lg border border-primary/20">
+              <h3 className="text-white font-medium mb-2">AI Insights</h3>
+              <ul className="space-y-1">
+                {plan.insights.map((insight, idx) => (
+                  <li key={idx} className="text-sm text-gray-300 flex items-start gap-2">
+                    <LightBulbIcon className="h-4 w-4 text-primary-light flex-shrink-0 mt-0.5" />
+                    {insight}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Statistics */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+        <div className="card-elevated">
           <h3 className="text-gray-400 text-sm">Total Tasks</h3>
-          <p className="text-3xl font-bold text-white">{tasks.length}</p>
+          <p className="text-3xl font-bold text-white text-glow">{tasks.length}</p>
         </div>
-        <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+        <div className="card-elevated">
           <h3 className="text-gray-400 text-sm">Completed</h3>
-          <p className="text-3xl font-bold text-white">{tasks.filter(t => t.completed).length}</p>
+          <p className="text-3xl font-bold text-white text-glow">
+            0
+          </p>
         </div>
-        <div className="bg-gray-800 p-6 rounded-xl border border-gray-700">
+        <div className="card-elevated">
           <h3 className="text-gray-400 text-sm">Remaining</h3>
-          <p className="text-3xl font-bold text-white">{tasks.filter(t => !t.completed).length}</p>
+          <p className="text-3xl font-bold text-white text-glow">
+            {tasks.length}
+          </p>
         </div>
       </div>
     </div>

@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 // Use the backend URL (adjust if needed)
-const API_BASE_URL = 'http://127.0.0.1:8000/api/v1'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api/v1'
 
 export interface Task {
   id: string
@@ -9,11 +9,15 @@ export interface Task {
   description: string
   deadline: string | null
   duration_minutes: number
+  approximate_time_minutes?: number
+  importance?: number
   priority: string | null
   category: string | null
   tags: string[]
   energy_required: string
   status: string
+  is_skippable?: boolean
+  is_critical?: boolean
   created_at: string
   user_id?: string
   overall_score?: number
@@ -25,6 +29,7 @@ export interface AIAnalysis {
   importance_score: number
   effort_score: number
   overall_priority_score: number
+  is_critical: boolean
   reasoning: string
   suggested_order: number
   ai_insights: string[]
@@ -37,6 +42,7 @@ export interface CreateTaskPayload {
   description?: string
   deadline?: string | null
   duration_minutes?: number
+  approximate_time_minutes?: number
   priority?: string | null
   category?: string | null
   tags?: string[]
@@ -78,6 +84,18 @@ export const taskService = {
   // Update task status
   updateTaskStatus: async (taskId: string, status: string): Promise<{ success: boolean; task: Task }> => {
     const response = await axios.patch(`${API_BASE_URL}/tasks/${taskId}/status?status=${status}`)
+    return response.data
+  },
+
+  // Check notifications
+  checkNotifications: async (): Promise<{ notifications: any[]; count: number; checked_at: string }> => {
+    const response = await axios.get(`${API_BASE_URL}/tasks/check-notifications`)
+    return response.data
+  },
+
+  // Cleanup tasks
+  cleanupTasks: async (): Promise<{ deleted_divisions: number; overdue_tasks: number; cleaned_at: string }> => {
+    const response = await axios.post(`${API_BASE_URL}/tasks/cleanup`)
     return response.data
   },
 }

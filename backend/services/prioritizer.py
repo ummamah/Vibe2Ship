@@ -266,6 +266,23 @@ class TaskPrioritizer:
         consequences = float(task.consequences_score)
         overall = (urgency * 0.35 + importance * 0.25 + consequences * 0.20 + (100 - effort) * 0.20)
 
+        # Determine if task is critical
+        hours_until_deadline = None
+        if task.deadline:
+            hours_until_deadline = (task.deadline - datetime.now()).total_seconds() / 3600
+        
+        is_critical = False
+        
+        # Always critical if consequences score > 85
+        if consequences > 85:
+            is_critical = True
+        # Critical if high consequences + high urgency + deadline within 48 hours
+        elif consequences > 70 and urgency > 60 and hours_until_deadline and hours_until_deadline <= 48:
+            is_critical = True
+        # Also critical if deadline is very close (< 12 hours) and consequences > 50
+        elif hours_until_deadline and hours_until_deadline <= 12 and consequences > 50:
+            is_critical = True
+
         if effort > 70:
             optimal_time = "morning"
         elif effort > 40:
@@ -288,6 +305,7 @@ class TaskPrioritizer:
             effort_score=effort,
             consequences_score=consequences,
             overall_priority_score=overall,
+            is_critical=is_critical,
             reasoning=f"Urgency: {urgency:.0f}/100, Importance: {importance:.0f}/100, Consequences: {consequences:.0f}/100",
             suggested_order=0,
             ai_insights=insights,
@@ -306,6 +324,7 @@ class TaskPrioritizer:
             "urgency": urgency,
             "effort": effort,
             "importance": ai_analysis.importance_score,
+            "is_critical": ai_analysis.is_critical,
             "ai_analysis": ai_analysis
         }
 

@@ -3,3 +3,14 @@ uvicorn
 httpx
 python-dotenv
 pydantic
+python-multipart
+sentence-transformers
+chromadb
+langchain
+langchain-community
+openai
+numpy
+PyPDF2
+python-docx
+google-cloud-firestore
+google-cloud-storage

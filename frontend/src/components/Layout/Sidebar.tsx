@@ -18,11 +18,9 @@ interface SidebarProps {
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: HomeIcon },
-  { name: 'Tasks AI', href: '/tasks', icon: ClipboardDocumentListIcon },
-  { name: 'Plan', href: '/plan', icon: CalendarIcon },
   { name: 'Study AI', href: '/study', icon: BookOpenIcon },
   { name: 'Focus Timer', href: '/focus', icon: ClockIcon },
-  { name: 'Schedule', href: '/schedule', icon: ChartBarIcon },
+  { name: 'Schedule', href: '/schedule', icon: CalendarIcon },
   { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
   { name: 'Settings', href: '/settings', icon: Cog6ToothIcon },
 ]
@@ -54,7 +52,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
               <SparklesIcon className="h-6 w-6 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-bold gradient-text">AI Productivity</h1>
+              <h1 className="text-lg font-bold gradient-text">NovaPilot</h1>
               <p className="text-xs text-gray-400">Your Personal Assistant</p>
             </div>
           </div>
@@ -96,23 +94,6 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
             </NavLink>
           ))}
         </nav>
-
-        {/* Bottom section - Quick stats */}
-        <div className="p-4 border-t border-dark-border">
-          <div className="card-elevated space-y-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-400">Tasks Today</span>
-              <span className="font-semibold text-primary">5</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-400">Focus Time</span>
-              <span className="font-semibold text-accent-purple">2h 34m</span>
-            </div>
-            <div className="w-full h-1 bg-dark-bg rounded-full overflow-hidden">
-              <div className="h-full w-3/5 bg-gradient-primary rounded-full" />
-            </div>
-          </div>
-        </div>
       </aside>
     </>
   )

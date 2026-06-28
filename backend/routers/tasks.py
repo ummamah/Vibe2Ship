@@ -140,6 +140,7 @@ async def create_task(task: TaskCreate):
 
     tasks_db[task_id]["ai_analysis"] = analysis["ai_analysis"]
     tasks_db[task_id]["overall_score"] = analysis["ai_analysis"].overall_priority_score
+    tasks_db[task_id]["is_critical"] = analysis["is_critical"]
 
     return {"success": True, "task": tasks_db[task_id]}
 
@@ -266,6 +267,86 @@ async def update_task_status(task_id: str, update: StatusUpdate):
         tasks_db[task_id]["completed_at"] = datetime.now().isoformat()
 
     return {"success": True, "task": tasks_db[task_id]}
+
+
+@router.get("/check-notifications") 
+async def check_notifications():
+    """Check for tasks needing reminders (24h before deadline) and critical tasks (12h)"""
+    now = datetime.now()
+    notifications = []
+    
+    for task_id, task in tasks_db.items():
+        deadline = task.get("deadline")
+        status = task.get("status", "have_to_start")
+        is_critical = task.get("is_critical", False)
+        
+        if not deadline or status == "completed" or status == "overdue":
+            continue
+            
+        hours_until = (deadline - now).total_seconds() / 3600
+        
+        # All tasks: 24h before deadline
+        if 0 < hours_until <= 24:
+            notifications.append({
+                "task_id": task_id,
+                "type": "reminder",
+                "message": f"'{task['title']}' is due in {int(hours_until)} hours",
+                "hours_until": hours_until,
+                "is_critical": is_critical,
+                "alarm": False
+            })
+        
+        # Critical tasks: 12h before deadline + alarm trigger
+        if is_critical and 0 < hours_until <= 12:
+            notifications.append({
+                "task_id": task_id,
+                "type": "critical",
+                "message": f"CRITICAL: '{task['title']}' is due in {int(hours_until)} hours!",
+                "hours_until": hours_until,
+                "is_critical": True,
+                "alarm": True
+            })
+    
+    return {
+        "notifications": notifications,
+        "count": len(notifications),
+        "checked_at": now.isoformat()
+    }
+
+
+@router.post("/cleanup")
+async def cleanup_tasks():
+    """Cleanup expired task divisions and mark overdue tasks"""
+    now = datetime.now()
+    deleted_divisions = 0
+    overdue_tasks = 0
+    
+    # TODO: Clean up task divisions from localStorage (handled on client)
+    # For now, we'll just mark parent tasks as overdue
+    
+    for task_id, task in tasks_db.items():
+        deadline = task.get("deadline")
+        status = task.get("status")
+        is_critical = task.get("is_critical", False)
+        
+        if not deadline or status == "completed" or status == "overdue":
+            continue
+            
+        if deadline < now:
+            if not is_critical:
+                # Non-critical tasks become overdue
+                task["status"] = TaskStatus.OVERDUE.value
+                task["overdue_at"] = now.isoformat()
+                overdue_tasks += 1
+            else:
+                # Critical tasks remain as-is or get special handling
+                pass
+    
+    return {
+        "deleted_divisions": deleted_divisions,
+        "overdue_tasks": overdue_tasks,
+        "cleaned_at": now.isoformat()
+    }
 
 
 @router.delete("/{task_id}")

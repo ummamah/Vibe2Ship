@@ -230,8 +230,54 @@ class TaskPlannerService:
         
         return insights
 
+    def _part_name(self, index: int) -> str:
+        """Generate a human-readable part name."""
+        parts = [
+            "Part 1", "Part 2", "Part 3", "Part 4", "Part 5",
+            "Part 6", "Part 7", "Part 8", "Part 9", "Part 10",
+            "Part 11", "Part 12", "Part 13", "Part 14", "Part 15"
+        ]
+        return f"Part {index + 1}" if index >= len(parts) else parts[index]
 
-_planner_service = None
+    def generate_fallback_subtasks(
+        self,
+        title: str,
+        description: str,
+        deadline: datetime,
+        available_hours_per_day: int,
+        preferences: UserPreferences
+    ) -> List[SubTask]:
+        """Deterministic subtask generation — even distribution, no burnout."""
+        days = max(1, (deadline - datetime.now()).days)
+        
+        # Cap at 2 weeks to avoid burnout
+        if days > 14:
+            days = 14
+
+        # Cap daily minutes to preferences.max_daily_minutes
+        max_daily_mins = preferences.get("max_daily_minutes", 240) if isinstance(preferences, dict) else getattr(preferences, "max_daily_minutes", 240)
+        daily_cap = min(available_hours_per_day * 60, max_daily_mins)
+        total_minutes = daily_cap * days
+
+        # Create 2-3 subtasks per day, max 12 (no burnout)
+        num_subtasks = min(max(3, days * 2), 12)
+        minutes_per_subtask = max(30, total_minutes // num_subtasks)
+
+        subtasks: List[SubTask] = []
+        for i in range(num_subtasks):
+            task_type = SubTaskType.READING if i % 3 == 0 else (
+                SubTaskType.PRACTICE if i % 3 == 1 else SubTaskType.REVIEW
+            )
+            subtasks.append(
+                SubTask(
+                    name=f"{title} - {self._part_name(i)}",
+                    type=task_type,
+                    estimated_minutes=minutes_per_subtask,
+                    dependencies=[subtasks[-1].name] if subtasks else []
+                )
+            )
+
+        return subtasks
 
 
 def get_planner_service() -> TaskPlannerService:
@@ -239,3 +285,6 @@ def get_planner_service() -> TaskPlannerService:
     if _planner_service is None:
         _planner_service = TaskPlannerService()
     return _planner_service
+
+
+_planner_service = None

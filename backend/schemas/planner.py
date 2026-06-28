@@ -56,7 +56,7 @@ class TaskPlanRequest(BaseModel):
     deadline: datetime = Field(..., description="The deadline for the overall task")
     start_date: Optional[datetime] = Field(default=None, description="When to start (defaults to tomorrow). If in the past, it will be capped to today.")
     subtasks: List[SubTask] = Field(..., min_length=1, description="Breakdown of the task into individual units of work")
-    available_hours_per_day: int = Field(default=3, ge=1, le=12, description="Average hours per day available for this task")
+    available_hours_per_day: int = Field(default=3, ge=1, le=8, description="Average hours per day available for this task")
     preferences: UserPreferences = Field(default_factory=UserPreferences)
     include_buffer: bool = Field(default=True, description="Include a buffer day for review/catch-up before the deadline")
     
@@ -118,3 +118,31 @@ class TaskPlan(BaseModel):
 class PlanResponse(BaseModel):
     """Wrapped response for a generated plan."""
     plan: TaskPlan
+
+
+class GenerateSubtasksRequest(BaseModel):
+    """Request to generate subtasks for a task using AI."""
+    available_hours_per_day: int = Field(default=3, ge=1, le=8, description="Average hours per day available for this task")
+    preferences: UserPreferences = Field(default_factory=UserPreferences)
+
+
+class SubTaskListResponse(BaseModel):
+    """Response containing generated subtasks."""
+    subtasks: List[SubTask]
+    task_id: str
+
+
+class AIPlanResponse(BaseModel):
+    """Combined response for AI plan generation: subtasks + plan."""
+    plan: TaskPlan
+    subtasks: List[SubTask]
+
+
+class DirectPlanRequest(BaseModel):
+    """Generate a plan directly without pre-creating a task."""
+    title: str = Field(..., min_length=1, max_length=200)
+    description: str = Field(default="", max_length=1000)
+    deadline: datetime = Field(...)
+    available_hours_per_day: int = Field(default=3, ge=1, le=8)
+    preferences: UserPreferences = Field(default_factory=UserPreferences)
+    include_buffer: bool = Field(default=True)

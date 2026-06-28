@@ -2,3 +2,8 @@ node_modules/
 __pycache__/
 *.pyc
 .env
+
+backend/chroma_db/
+backend/stderr.txt
+backend/stdout.txt
+temp_*.py

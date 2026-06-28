@@ -6,28 +6,28 @@ export default function HomePage() {
       name: 'Tasks Today',
       value: '5',
       icon: CheckCircleIcon,
-      color: 'from-blue-500 to-cyan-500',
+      color: 'from-primary to-primary-light',
       change: '+2',
     },
     {
       name: 'Study Time',
       value: '2h 34m',
       icon: ClockIcon,
-      color: 'from-purple-500 to-pink-500',
+      color: 'from-earth-500 to-earth-600',
       change: '+45m',
     },
     {
       name: 'Completed',
       value: '12',
       icon: SparklesIcon,
-      color: 'from-cyan-500 to-blue-500',
+      color: 'from-accent-purple to-accent-pink',
       change: '+4',
     },
     {
       name: 'Focus Score',
       value: '87%',
       icon: ChartBarIcon,
-      color: 'from-pink-500 to-purple-500',
+      color: 'from-primary to-accent-purple',
       change: '+5%',
     },
   ]
@@ -78,7 +78,7 @@ export default function HomePage() {
         {/* Upcoming Tasks */}
         <div className="card">
           <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-            <CheckCircleIcon className="h-6 w-6 text-primary" />
+            <CheckCircleIcon className="h-6 w-6 icon-primary" />
             Upcoming Tasks
           </h2>
           <div className="space-y-3">
@@ -92,12 +92,12 @@ export default function HomePage() {
                 className="flex items-center gap-3 p-3 rounded-lg bg-dark-elevated hover:bg-dark-hover transition-colors cursor-pointer group"
               >
                 <div className={`w-1 h-12 rounded-full ${
-                  task.priority === 'high' ? 'bg-red-500' :
-                  task.priority === 'medium' ? 'bg-yellow-500' :
-                  'bg-green-500'
+                  task.priority === 'high' ? 'bg-gradient-to-r from-primary to-accent-pink shadow-glow' :
+                  task.priority === 'medium' ? 'bg-gradient-to-r from-earth-500 to-earth-600' :
+                  'bg-gradient-to-r from-earth-600 to-earth-700'
                 }`} />
                 <div className="flex-1">
-                  <p className="text-white font-medium group-hover:text-primary transition-colors">
+                  <p className="text-white font-medium group-hover:text-primary-light transition-colors">
                     {task.title}
                   </p>
                   <p className="text-sm text-gray-400">{task.time}</p>
@@ -112,7 +112,7 @@ export default function HomePage() {
         {/* AI Chat Preview */}
         <div className="card">
           <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-            <SparklesIcon className="h-6 w-6 text-accent-purple" />
+            <SparklesIcon className="h-6 w-6 icon-accent" />
             Quick AI Chat
           </h2>
           <div className="space-y-3 mb-4">

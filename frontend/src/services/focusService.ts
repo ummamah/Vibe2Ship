@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const API_BASE_URL = 'http://127.0.0.1:8000/api/v1'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api/v1'
 
 export interface TimerConfig {
   focus_duration_minutes: number
@@ -12,7 +12,7 @@ export interface TimerConfig {
 export interface TimerState {
   phase: 'idle' | 'focus' | 'short_break' | 'long_break' | 'paused' | 'completed'
   time_remaining_seconds: number
-  time_remaining_seconds: number
+  total_seconds: number
   progress_percentage: number
   session_number: number
   topic: string

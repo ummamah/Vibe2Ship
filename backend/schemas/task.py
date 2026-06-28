@@ -9,6 +9,7 @@ class TaskStatus(str, Enum):
     WORKING_ON_IT = "working_on_it"
     COMPLETED = "completed"
     DEFERRED = "deferred"
+    OVERDUE = "overdue"
 
 
 class TaskInput(BaseModel):
@@ -51,6 +52,7 @@ class AIPriorityAnalysis(BaseModel):
     effort_score: float = Field(..., ge=0, le=100)
     consequences_score: float = Field(..., ge=0, le=100)
     overall_priority_score: float = Field(..., ge=0, le=100)
+    is_critical: bool = False
     reasoning: str
     suggested_order: int
     ai_insights: List[str]
@@ -64,6 +66,7 @@ class TaskCreate(BaseModel):
     description: str = ""
     deadline: Optional[datetime] = None
     duration_minutes: int = 30
+    approximate_time_minutes: int = Field(default=30, ge=1, le=480, description="User's estimate of time needed to complete the task")
     category: Optional[str] = None
     tags: List[str] = []
     energy_required: str = "medium"
@@ -79,6 +82,7 @@ class TaskResponse(TaskCreate):
     created_at: datetime
     ai_analysis: Optional[dict] = None
     overall_score: float = 0.0
+    is_critical: bool = False
 
 
 class PriorityRequest(BaseModel):
