@@ -148,21 +148,38 @@ async def create_task(task: TaskCreate):
 @router.get("/prioritized")
 async def get_prioritized_tasks():
     """Get all tasks with AI priority analysis sorted by importance"""
-    prioritizer = get_prioritizer()
-    tasks = list(tasks_db.values())
+    try:
+        tasks = list(tasks_db.values())
+        task_id_to_meta = {t["id"]: {"is_critical": t.get("is_critical", False), "overall_score": t.get("overall_score", 0.0), "ai_analysis": t.get("ai_analysis")} for t in tasks if "id" in t}
 
-    task_objects = []
-    for t in tasks:
-        task_data = {k: v for k, v in t.items() if k in TaskCreate.model_fields}
-        task_objects.append(TaskCreate(**task_data))
+        task_objects = []
+        for t in tasks:
+            task_data = {k: v for k, v in t.items() if k in TaskCreate.model_fields}
+            tc = TaskCreate(**task_data)
+            object.__setattr__(tc, 'id', t.get("id"))
+            task_objects.append(tc)
 
-    prioritized = await prioritizer.prioritize_tasks(task_objects)
+        prioritized = await get_prioritizer().prioritize_tasks(task_objects)
 
-    return {
-        "tasks": prioritized,
-        "count": len(prioritized),
-        "generated_at": datetime.now().isoformat()
-    }
+        for ptask in prioritized:
+            tid = ptask.get("id")
+            if tid and tid in task_id_to_meta:
+                meta = task_id_to_meta[tid]
+                ptask["is_critical"] = meta["is_critical"]
+                ptask["overall_score"] = meta["overall_score"]
+                if meta["ai_analysis"]:
+                    ptask["ai_analysis"] = meta["ai_analysis"]
+
+        return {
+            "tasks": prioritized,
+            "count": len(prioritized),
+            "generated_at": datetime.now().isoformat()
+        }
+    except Exception as e:
+        import traceback
+        print(f"[PRIORITIZE FULL ERROR]: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Prioritization error: {type(e).__name__}: {e}")
 
 
 @router.post("/analyze")

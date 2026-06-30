@@ -50,8 +50,8 @@ async def generate_ai_plan(
     """
     Complete AI planning pipeline:
     1. Fetch task from tasks_db
-    2. Generate subtasks using LLM
-    3. Generate plan using PlannerService
+    2. Generate subtasks using LLM (with specific names)
+    3. Generate plan using PlannerService (time-aware)
     4. Return combined response with plan and subtasks
     """
     # 1. Fetch task
@@ -64,7 +64,10 @@ async def generate_ai_plan(
     if request is None:
         request = GenerateSubtasksRequest()
     
-    # 2. Generate subtasks via LLM
+    # Get deadline_time from task or default to 17:00
+    deadline_time = task.get("deadline_time", "17:00")
+    
+    # 2. Generate subtasks via LLM (with specific chapter/topic names)
     llm_service = get_llm_service()
     
     try:
@@ -78,13 +81,14 @@ async def generate_ai_plan(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate subtasks: {str(e)}")
     
-    # 3. Generate plan using planner service
+    # 3. Generate plan using planner service (time-aware with hour boundaries)
     planner = get_planner_service()
     
     plan_request = TaskPlanRequest(
         title=task.get("title", "Untitled Task"),
         description=task.get("description", ""),
         deadline=task.get("deadline"),
+        deadline_time=deadline_time,
         start_date=datetime.now(),
         subtasks=subtasks,
         available_hours_per_day=request.available_hours_per_day,
@@ -130,13 +134,14 @@ async def generate_plan_direct(request: DirectPlanRequest):
         "title": request.title,
         "description": request.description,
         "deadline": request.deadline,
+        "deadline_time": "17:00",  # Default to 5 PM
         "created_at": datetime.now(),
         "user_id": "default",
         "status": "have_to_start"
     }
     tasks_db[task_id] = task_data
     
-    # 2. Generate subtasks (LLM with fallback)
+    # 2. Generate subtasks (LLM with fallback) - specific chapter names
     llm_service = get_llm_service()
     try:
         subtasks = await llm_service.generate_subtasks(
@@ -157,11 +162,12 @@ async def generate_plan_direct(request: DirectPlanRequest):
             request.available_hours_per_day, request.preferences
         )
     
-    # 3. Generate plan
+    # 3. Generate plan (time-aware)
     plan_request = TaskPlanRequest(
         title=request.title,
         description=request.description,
         deadline=request.deadline,
+        deadline_time="17:00",
         start_date=datetime.now(),
         subtasks=subtasks,
         available_hours_per_day=request.available_hours_per_day,

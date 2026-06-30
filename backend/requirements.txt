@@ -3,7 +3,11 @@ uvicorn
 httpx
 python-dotenv
 pydantic
+pydantic[email]
 python-multipart
+python-jose[cryptography]
+passlib[bcrypt]
+aiosmtplib
 sentence-transformers
 chromadb
 langchain
@@ -14,3 +18,4 @@ PyPDF2
 python-docx
 google-cloud-firestore
 google-cloud-storage
+pytest

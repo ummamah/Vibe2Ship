@@ -32,7 +32,7 @@ class LLMService:
         available_hours_per_day: int,
         preferences: UserPreferences
     ) -> str:
-        """Build the prompt for subtask generation."""
+        """Build the prompt for GENERATING SPECIFIC SUBTASK NAMES."""
         days_until_deadline = (deadline - datetime.now()).days
         if days_until_deadline <= 0:
             days_until_deadline = 1
@@ -44,41 +44,49 @@ class LLMService:
         
         task_types = [t.value for t in SubTaskType]
         
-        return f"""You are an AI task planner. Break down the following task into 5-12 specific, actionable subtasks.
+        return f"""You are an expert task planner. BREAK DOWN a complex task into SPECIFIC, NAMED subtasks.
 
-TASK:
+TASK TO BREAK DOWN:
 - Title: {title}
-- Description: {description}
+- Description/Context: {description}
 - Deadline: {deadline.strftime('%Y-%m-%d')} ({days_until_deadline} days from now)
 - Available hours per day: {available_hours_per_day}
 - Total available hours: ~{total_hours}
 
 USER PREFERENCES:
-- Heavy days (more study time): {heavy_days}
-- Light days (less study time): {light_days}
-- Preferred time: {preferences.preferred_time_start} - {preferences.preferred_time_end}
+- Heavy days: {heavy_days}
+- Light days: {light_days}
+- Preferred work hours: {preferences.preferred_time_start} - {preferences.preferred_time_end}
 - Max daily minutes: {preferences.max_daily_minutes}
-- Allow overlapping tasks: {preferences.overlapping_tasks}
 
-SUBTASK TYPES (choose from): {", ".join(task_types)}
+SUBTASK TYPES: {", ".join(task_types)}
 
-REQUIREMENTS:
-1. Each subtask must have: name, type, estimated_minutes (15-480), dependencies (list of subtask names)
-2. Dependencies must reference other subtask names in this list
-3. Total estimated minutes should be realistic for the deadline
-4. Order subtasks logically (dependencies first)
-5. Mix task types appropriately (reading, practice, review, etc.)
-6. Output ONLY valid JSON matching this schema:
+CRITICAL REQUIREMENTS:
+1. SUBTASK NAMES MUST BE SPECIFIC - use chapter numbers, topic names, section names
+   GOOD: "Ch 1: Multiplication & Division", "Ch 2: Fractions", "Practice: Equations Set A"
+   BAD: "Math Part 1", "Study Section", "Review Material"
+
+2. Each subtask needs: name, type, estimated_minutes (15-120), dependencies
+
+3. Dependencies: only reference subtasks that MUST come before (linear dependencies only)
+
+4. Realistic time estimates: Chapter review = 60-90min, Practice problems = 45-60min, Review = 30-45min
+
+5. Generate 5-12 subtasks that COVER THE FULL SCOPE of the task
+
+6. Output ONLY valid JSON:
 {{
   "subtasks": [
     {{
-      "name": "string",
-      "type": "string",
-      "estimated_minutes": integer,
-      "dependencies": ["string"]
+      "name": "SPECIFIC NAME (e.g., 'Ch 1: Multiplication')",
+      "type": "reading|writing|practice|research|review|memorization|creation|analysis",
+      "estimated_minutes": 60,
+      "dependencies": []
     }}
   ]
-}}"""
+}}
+
+Do NOT use generic names. Be specific about WHAT will be learned/done in each subtask."""
 
     async def generate_subtasks(
         self,
@@ -143,19 +151,28 @@ REQUIREMENTS:
         deadline: datetime,
         available_hours_per_day: int
     ) -> List[SubTask]:
-        """Generate basic subtasks if LLM fails."""
+        """Generate basic subtasks if LLM fails - uses chapter-like naming."""
         days = max(1, (deadline - datetime.now()).days)
         total_minutes = available_hours_per_day * 60 * days
-        num_subtasks = min(max(3, days), 10)
-        minutes_per_subtask = max(30, total_minutes // num_subtasks)
+        
+        # Create chapter-style names based on title keywords
+        topic = title.split()[0] if title else "Topic"  # Use first word as topic
+        num_subtasks = min(max(3, days), 8)
+        minutes_per_subtask = max(30, min(90, total_minutes // num_subtasks))
         
         subtasks = []
         for i in range(num_subtasks):
+            subtask_name = f"{topic} - Section {i + 1}"
+            if i == num_subtasks - 1:
+                subtask_name = f"Review & Practice - {topic}"
+            
             subtasks.append(SubTask(
-                name=f"{title} - Part {i + 1}",
-                type=SubTaskType.READING if i % 3 == 0 else SubTaskType.PRACTICE,
+                name=subtask_name,
+                type=SubTaskType.REVIEW if i == num_subtasks - 1 else (
+                    SubTaskType.PRACTICE if i % 2 == 0 else SubTaskType.READING
+                ),
                 estimated_minutes=minutes_per_subtask,
-                dependencies=[f"{title} - Part {i}"] if i > 0 else []
+                dependencies=[subtasks[-1].name] if subtasks else []
             ))
         return subtasks
 

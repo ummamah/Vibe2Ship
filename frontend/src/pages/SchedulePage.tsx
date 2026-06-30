@@ -132,6 +132,7 @@ export default function SchedulePage() {
     title: '',
     description: '',
     deadline: '',
+    deadlineTime: '17:00',  // Default to 5 PM
     estimatedHours: 1,
     approximateTime: 60,
     priority: 'medium' as 'high' | 'medium' | 'low',
@@ -169,11 +170,13 @@ export default function SchedulePage() {
         title: newTask.title,
         description: newTask.description,
         deadline: newTask.deadline,
+        deadline_time: newTask.deadlineTime,  // 5 PM default
         duration_minutes: newTask.estimatedHours * 60,
         priority: newTask.priority,
         category: 'Study',
         tags: [],
-        energy_required: 'medium'
+        energy_required: 'medium',
+        use_ai_plan: newTask.planForTask
       })
       
       const taskId = created.task.id
@@ -183,31 +186,61 @@ export default function SchedulePage() {
         // Generate AI plan directly (zero-step flow)
         const { plan } = await plannerService.generateAIPlan(taskId, defaultPreferences)
         
-        // Convert plan.daily_chunks -> TaskPortion[]
+        // Convert plan.daily_chunks -> TaskPortion[] using subtask_details
         const portions: TaskPortion[] = []
         let portionCounter = 1
+        const totalPortions = plan.daily_chunks.reduce(
+          (acc, c) => acc + (c.subtask_details?.length || c.subtask_names.length), 0
+        )
         
         plan.daily_chunks.forEach((chunk) => {
-          const minutesPerSubtask = chunk.subtask_names.length > 0
-            ? Math.floor(chunk.total_minutes / chunk.subtask_names.length)
-            : 0
+          // Use subtask_details if available (time-aware), otherwise fall back to names
+          const details = chunk.subtask_details || []
           
-          chunk.subtask_names.forEach((subtaskName) => {
-            portions.push({
-              id: `${taskId}-portion-${portionCounter}`,
-              parentTaskId: taskId,
-              title: subtaskName,
-              description: newTask.description,
-              date: new Date(chunk.date),
-              time: '09:00 AM',
-              duration: minutesPerSubtask,
-              priority: newTask.priority,
-              completed: false,
-              portionNumber: portionCounter,
-              totalPortions: plan.daily_chunks.reduce((acc, c) => acc + c.subtask_names.length, 0)
+          if (details.length > 0) {
+            // Use specific subtask names and times from AI plan
+            details.forEach((detail) => {
+              // Convert "09:00" to "9:00 AM" format
+              const timeDisplay = formatTimeTo12Hour(detail.start_time)
+              
+              portions.push({
+                id: `${taskId}-portion-${portionCounter}`,
+                parentTaskId: taskId,
+                title: `${newTask.title} - ${detail.name}`,  // "Math Exam - Ch 1: Multiplication"
+                description: detail.name,  // Only the specific subtask name
+                date: new Date(chunk.date),
+                time: timeDisplay,
+                duration: detail.duration_minutes,
+                priority: newTask.priority,
+                completed: false,
+                portionNumber: portionCounter,
+                totalPortions: totalPortions
+              })
+              portionCounter++
             })
-            portionCounter++
-          })
+          } else {
+            // Fallback to names-based (for backwards compatibility)
+            const minutesPerSubtask = chunk.subtask_names.length > 0
+              ? Math.floor(chunk.total_minutes / chunk.subtask_names.length)
+              : 0
+            
+            chunk.subtask_names.forEach((subtaskName) => {
+              portions.push({
+                id: `${taskId}-portion-${portionCounter}`,
+                parentTaskId: taskId,
+                title: subtaskName,
+                description: newTask.description,
+                date: new Date(chunk.date),
+                time: '09:00 AM',
+                duration: minutesPerSubtask,
+                priority: newTask.priority,
+                completed: false,
+                portionNumber: portionCounter,
+                totalPortions: totalPortions
+              })
+              portionCounter++
+            })
+          }
         })
         
         const task: Task = {
@@ -259,6 +292,7 @@ export default function SchedulePage() {
       title: '',
       description: '',
       deadline: '',
+      deadlineTime: '17:00',
       estimatedHours: 1,
       approximateTime: 60,
       priority: 'medium',
@@ -980,6 +1014,30 @@ export default function SchedulePage() {
       )}
     </div>
   )
+}
+
+// Helper: Convert "09:00" (24hr) to "9:00 AM" (12hr display)
+function formatTimeTo12Hour(time24: string): string {
+  if (!time24) return '09:00 AM'
+  
+  const [hours, minutes] = time24.split(':').map(Number)
+  if (isNaN(hours)) return '09:00 AM'
+  
+  const period = hours >= 12 ? 'PM' : 'AM'
+  const hour12 = hours % 12 || 12
+  
+  return `${hour12}:${minutes.toString().padStart(2, '0')} ${period}`
+}
+
+// Add hours to time string "HH:MM" and return new time string
+function addHoursToTime(time24: string, hoursToAdd: number): string {
+  if (!time24) return '10:00'
+  
+  const [hours, minutes] = time24.split(':').map(Number)
+  if (isNaN(hours)) return '10:00'
+  
+  const newHours = (hours + hoursToAdd) % 24
+  return `${newHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
 }
 
 function CalendarIcon({ className }: { className?: string }) {

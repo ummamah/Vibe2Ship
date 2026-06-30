@@ -9,6 +9,7 @@ from routers.tasks import router as tasks_router, check_notifications, cleanup_t
 from routers.planner import router as planner_router
 from routers.focus import router as focus_router
 from routers.study_ai import router as study_ai_router, collections_db, documents_db
+# from routers.auth import router as auth_router  # Auth disabled - uncomment to re-enable
 from services.rag_service import get_rag_service
 from services.timer import get_timer_service
 from schemas.focus import FocusSessionInput, TimerAction
@@ -22,7 +23,7 @@ app = FastAPI(
 
 # CORS: allow local dev and Firebase Hosting domains
 _firebase_url = os.environ.get("FIREBASE_HOSTING_URL", "")
-_origins = ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:5173"]
+_origins = ["http://localhost:3000", "http://localhost:3001", "http://localhost:5173", "http://127.0.0.1:5173", "http://127.0.0.1:3000"]
 if _firebase_url:
     _origins.append(_firebase_url)
     _origins.append("https://" + _firebase_url.replace("https://", ""))
@@ -35,7 +36,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Log SMTP status at startup so configuration issues are visible immediately
+# from services.email_service import smtp_status  # Auth disabled
+_status = {"configured": False}
+print("=" * 60)
+print(f"[STARTUP] Auth router disabled - app is open access.")
+print("=" * 60)
+
 app.include_router(tasks_router, prefix="/api/v1", tags=["tasks"])
+# app.include_router(auth_router, prefix="/api/v1", tags=["auth"])  # Auth disabled
 app.include_router(planner_router, prefix="/api/v1", tags=["planner"])
 app.include_router(focus_router, prefix="/api/v1", tags=["focus"])
 app.include_router(study_ai_router, prefix="/api/v1", tags=["study-ai"])

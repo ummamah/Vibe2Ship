@@ -65,6 +65,11 @@ class TaskCreate(BaseModel):
     title: str
     description: str = ""
     deadline: Optional[datetime] = None
+    deadline_time: Optional[str] = Field(
+        default="17:00",
+        pattern=r"^([01]?[0-9]|2[0-3]):[0-5][0-9]$",
+        description="Due time in 24hr format (e.g., '17:00')"
+    )
     duration_minutes: int = 30
     approximate_time_minutes: int = Field(default=30, ge=1, le=480, description="User's estimate of time needed to complete the task")
     category: Optional[str] = None
@@ -75,6 +80,7 @@ class TaskCreate(BaseModel):
     consequences_score: int = 50
     user_id: Optional[str] = "default"
     status: TaskStatus = TaskStatus.HAVE_TO_START
+    use_ai_plan: bool = False
 
 
 class TaskResponse(TaskCreate):
@@ -83,6 +89,7 @@ class TaskResponse(TaskCreate):
     ai_analysis: Optional[dict] = None
     overall_score: float = 0.0
     is_critical: bool = False
+    deadline_time: Optional[str] = "17:00"
 
 
 class PriorityRequest(BaseModel):

@@ -331,8 +331,10 @@ class TaskPrioritizer:
     async def prioritize_tasks(self, tasks: List[TaskCreate]) -> List[dict]:
         """Analyze and prioritize all tasks"""
         enriched_tasks = []
+        task_ids = []
 
         for task in tasks:
+            task_ids.append(getattr(task, 'id', None))
             analysis = await self.analyze_single_task(task)
             task_dict = task.model_dump()
             if hasattr(task.status, 'value'):
@@ -346,7 +348,12 @@ class TaskPrioritizer:
         enriched_tasks.sort(key=lambda x: x["overall_score"], reverse=True)
 
         for i, task in enumerate(enriched_tasks, 1):
-            task["ai_analysis"]["suggested_order"] = i
+            task["ai_analysis"].suggested_order = i
+            task["ai_analysis"] = task["ai_analysis"].model_dump()
+
+        for i, tid in enumerate(task_ids):
+            if tid:
+                enriched_tasks[i]["id"] = tid
 
         return enriched_tasks
 

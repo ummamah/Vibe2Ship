@@ -40,9 +40,6 @@ export default function StatsCard({
             })()}
           </div>
         )}
-        {change && (
-          <span className="text-sm font-medium text-green-400">{change}</span>
-        )}
       </div>
       
       {children ? (

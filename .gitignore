@@ -4,6 +4,8 @@ __pycache__/
 .env
 
 backend/chroma_db/
+backend/utils/__pycache__/
 backend/stderr.txt
 backend/stdout.txt
+backend/backend_reload.log
 temp_*.py

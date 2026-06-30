@@ -3,12 +3,14 @@ Autonomous Task Planner Service
 
 Plans how to complete a large task by breaking it into daily targets.
 Distributes work evenly while respecting dependencies, user preferences, and deadlines.
+Now includes TIME-AWARE scheduling with hour boundaries.
 """
 
-from datetime import datetime, timedelta
-from typing import List, Optional
+from datetime import datetime, timedelta, time
+from typing import List, Optional, Dict, Set
 from schemas.planner import (
-    TaskPlanRequest, TaskPlan, DailyChunk, SubTask, SubTaskType, UserPreferences
+    TaskPlanRequest, TaskPlan, DailyChunk, SubTask, SubTaskType, 
+    UserPreferences, SubtaskDetail
 )
 
 # In-memory storage for hackathon speed
@@ -31,19 +33,62 @@ class TaskPlannerService:
         """Check if the given date is a light day."""
         return self._day_name(date) in preferences.light_days
 
-    def _get_daily_capacity(self, date: datetime, preferences: UserPreferences, base_hours: int) -> int:
-        """Calculate how many minutes can be scheduled for a given day."""
-        base_minutes = base_hours * 60
-        
+    def _get_day_capacity_hours(self, date: datetime, preferences: UserPreferences, base_hours: int) -> int:
+        """Calculate how many hours can be scheduled for a given day."""
         if self._is_heavy_day(date, preferences):
-            # Heavy days: up to 1.5x the base, capped at max_daily_minutes
-            return min(int(base_minutes * 1.5), preferences.max_daily_minutes)
+            return min(int(base_hours * 1.5), preferences.max_daily_minutes // 60)
         elif self._is_light_day(date, preferences):
-            # Light days: 0.5x the base
-            return int(base_minutes * 0.5)
+            return int(base_hours * 0.5)
         else:
-            # Normal day: base capacity, capped at max
-            return min(base_minutes, preferences.max_daily_minutes)
+            return min(base_hours, preferences.max_daily_minutes // 60)
+
+    def _parse_time(self, time_str: str) -> int:
+        """Parse HH:MM time string to hour (int)."""
+        if ':' in time_str:
+            return int(time_str.split(':')[0])
+        return int(time_str)
+
+    def _get_available_hour_slots(
+        self, 
+        date: datetime, 
+        preferences: UserPreferences, 
+        base_hours: int,
+        existing_blocks: List[Dict] = None
+    ) -> List[int]:
+        """
+        Get available hour slots for a day.
+        Returns list of available hours (e.g., [9, 10, 11, 14, 15]).
+        """
+        if existing_blocks is None:
+            existing_blocks = []
+        
+        # Get day capacity
+        day_capacity = self._get_day_capacity_hours(date, preferences, base_hours)
+        if day_capacity == 0:
+            return []
+        
+        # Parse preferred hours
+        start_hour = self._parse_time(preferences.preferred_time_start)
+        end_hour = self._parse_time(preferences.preferred_time_end)
+        
+        # Get booked hours for this day
+        booked_hours = set()
+        for block in existing_blocks:
+            if block.get('date') == date.date():
+                start = block.get('start_hour', 9)
+                end = block.get('end_hour', 10)
+                for h in range(start, end):
+                    booked_hours.add(h)
+        
+        # Build available slots
+        available = []
+        current_hour = start_hour
+        while current_hour < end_hour and len(available) < day_capacity:
+            if current_hour not in booked_hours:
+                available.append(current_hour)
+            current_hour += 1
+        
+        return available
 
     def _build_dependency_graph(self, subtasks: List[SubTask]) -> dict:
         """Build a graph of subtask dependencies."""
@@ -69,83 +114,127 @@ class TaskPlannerService:
             visit(st.name)
         return sorted_list
 
-    def generate_plan(self, request: TaskPlanRequest, task_id: Optional[str] = None) -> TaskPlan:
-        """Generate a day-by-day plan for the given task request."""
+    def generate_plan(
+        self, 
+        request: TaskPlanRequest, 
+        task_id: Optional[str] = None,
+        existing_blocks: List[Dict] = None
+    ) -> TaskPlan:
+        """
+        Generate a day-by-day plan with TIME-AWARE scheduling.
+        
+        Args:
+            request: Task plan request with subtasks
+            task_id: Optional task ID
+            existing_blocks: List of existing scheduled blocks [{date, start_hour, end_hour, task_title}]
+        """
         now = datetime.now()
-        start_date = request.start_date or (now + timedelta(days=1))
+        start_date = request.start_date or now
         
         # Ensure start_date is not in the past
         if start_date < now.replace(hour=0, minute=0, second=0, microsecond=0):
-            start_date = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+            start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
         # Calculate end date with buffer if requested
         if request.include_buffer:
-            # Leave one day before deadline as buffer
             end_date = request.deadline - timedelta(days=1)
         else:
             end_date = request.deadline
 
+        # Parse deadline time
+        deadline_hour = self._parse_time(getattr(request, 'deadline_time', '17:00'))
+        
         # Topologically sort subtasks by dependencies
         sorted_names = self._topological_sort(request.subtasks)
         subtask_map = {st.name: st for st in request.subtasks}
 
-        # Schedule subtasks across days
+        # Schedule subtasks across days with TIME SLOTS
         daily_chunks = []
-        current_date = start_date
-        today_subtasks = []
-        today_minutes = 0
+        current_date = start_date.replace(hour=9, minute=0, second=0, microsecond=0)
         day_index = 0
-
-        # Process each subtask in order
-        for st_name in sorted_names:
-            st = subtask_map[st_name]
-            assigned = False
-            while not assigned:
-                capacity = self._get_daily_capacity(current_date, request.preferences, request.available_hours_per_day)
-                remaining_capacity = capacity - today_minutes
-                
-                # Try to fit this subtask in today
-                if st.estimated_minutes <= remaining_capacity:
-                    today_subtasks.append(st_name)
-                    today_minutes += st.estimated_minutes
-                    assigned = True
-                else:
-                    # Current day is full, save it and move to next day
-                    if today_subtasks:
-                        notes = self._generate_day_notes(current_date, today_subtasks, request.preferences)
-                        daily_chunks.append(
-                            DailyChunk(
-                                date=current_date,
-                                subtask_names=today_subtasks.copy(),
-                                total_minutes=today_minutes,
-                                notes=notes,
-                                is_buffer=False,
-                                is_milestone=self._check_milestone(today_subtasks, subtask_map)
-                            )
-                        )
-                    # Reset for new day
-                    today_subtasks = []
-                    today_minutes = 0
-                    current_date += timedelta(days=1)
-                    day_index += 1
-
-                    # Check if we've exceeded the deadline
-                    if current_date > end_date:
-                        break
-
-        # Don't forget to save the last day
-        if today_subtasks:
-            notes = self._generate_day_notes(current_date, today_subtasks, request.preferences)
-            daily_chunks.append(
-                DailyChunk(
-                    date=current_date,
-                    subtask_names=today_subtasks,
-                    total_minutes=today_minutes,
-                    notes=notes,
-                    is_buffer=False,
-                    is_milestone=self._check_milestone(today_subtasks, subtask_map)
-                )
+        
+        # Remaining subtasks to schedule
+        remaining_subtasks = [(name, subtask_map[name]) for name in sorted_names]
+        
+        while remaining_subtasks and current_date <= end_date:
+            # Get available hour slots for this day
+            available_slots = self._get_available_hour_slots(
+                current_date, 
+                request.preferences, 
+                request.available_hours_per_day,
+                existing_blocks or []
             )
+            
+            if not available_slots:
+                # No slots available, move to next day
+                current_date += timedelta(days=1)
+                day_index += 1
+                continue
+            
+            # Collect subtasks for this day
+            day_subtask_names = []
+            day_subtask_details = []
+            day_total_minutes = 0
+            
+            for slot_hour in available_slots:
+                if not remaining_subtasks:
+                    break
+                
+                # Take next subtask
+                st_name, st = remaining_subtasks.pop(0)
+                day_subtask_names.append(st_name)
+                
+                # Calculate time slot (hour boundary)
+                duration_hours = max(1, st.estimated_minutes // 60)
+                end_slot_hour = min(slot_hour + duration_hours, 
+                                    self._parse_time(request.preferences.preferred_time_end))
+                
+                # If subtask extends beyond available slots, push back
+                if duration_hours > 1 and available_slots.index(slot_hour) + duration_hours > len(available_slots):
+                    # Subtask too big for remaining slots, might not fit today
+                    # Put it back and try next day
+                    remaining_subtasks.insert(0, (st_name, st))
+                    break
+                
+                # Create detail with time slot
+                detail = SubtaskDetail(
+                    name=st.name,
+                    start_time=f"{slot_hour:02d}:00",
+                    end_time=f"{end_slot_hour:02d}:00",
+                    duration_minutes=st.estimated_minutes
+                )
+                day_subtask_details.append(detail)
+                day_total_minutes += st.estimated_minutes
+                
+                # Update existing blocks so next subtasks don't overlap
+                if existing_blocks is not None:
+                    existing_blocks.append({
+                        'date': current_date.date(),
+                        'start_hour': slot_hour,
+                        'end_hour': end_slot_hour,
+                        'task_title': st_name
+                    })
+
+            if day_subtask_names:
+                notes = self._generate_day_notes(current_date, day_subtask_names, request.preferences)
+                daily_chunks.append(
+                    DailyChunk(
+                        date=current_date,
+                        subtask_names=day_subtask_names,
+                        subtask_details=day_subtask_details,
+                        total_minutes=day_total_minutes,
+                        total_hours=day_total_minutes // 60,
+                        notes=notes,
+                        is_buffer=False,
+                        is_milestone=self._check_milestone(day_subtask_names, subtask_map)
+                    )
+                )
+                current_date += timedelta(days=1)
+                day_index += 1
+            else:
+                # No subtasks fit, move to next day
+                current_date += timedelta(days=1)
+                day_index += 1
 
         # Add buffer day if requested and there's room
         if request.include_buffer:
@@ -155,7 +244,9 @@ class TaskPlannerService:
                     DailyChunk(
                         date=buffer_date,
                         subtask_names=[],
+                        subtask_details=[],
                         total_minutes=0,
+                        total_hours=0,
                         notes="Buffer day for review and catch-up",
                         is_buffer=True,
                         is_milestone=False
@@ -191,7 +282,7 @@ class TaskPlannerService:
         if self._is_heavy_day(date, preferences):
             return f"{day_name} - Heavy day: {len(subtask_names)} tasks scheduled. Stay focused!"
         elif self._is_light_day(date, preferences):
-            return f"{day_name} - Light day: focus on {', '.join(subtask_names)}."
+            return f"{day_name} - Light day: focus on {', '.join(subtask_names[:2])}."
         else:
             return f"{day_name} - Standard schedule: {len(subtask_names)} tasks to complete."
 
@@ -200,7 +291,6 @@ class TaskPlannerService:
         for st_name in subtask_names:
             st = subtask_map.get(st_name)
             if st and not st.dependencies:
-                # Simple milestone: first task in a chain
                 return True
         return False
 
@@ -234,8 +324,7 @@ class TaskPlannerService:
         """Generate a human-readable part name."""
         parts = [
             "Part 1", "Part 2", "Part 3", "Part 4", "Part 5",
-            "Part 6", "Part 7", "Part 8", "Part 9", "Part 10",
-            "Part 11", "Part 12", "Part 13", "Part 14", "Part 15"
+            "Part 6", "Part 7", "Part 8", "Part 9", "Part 10"
         ]
         return f"Part {index + 1}" if index >= len(parts) else parts[index]
 
@@ -255,7 +344,7 @@ class TaskPlannerService:
             days = 14
 
         # Cap daily minutes to preferences.max_daily_minutes
-        max_daily_mins = preferences.get("max_daily_minutes", 240) if isinstance(preferences, dict) else getattr(preferences, "max_daily_minutes", 240)
+        max_daily_mins = preferences.max_daily_minutes
         daily_cap = min(available_hours_per_day * 60, max_daily_mins)
         total_minutes = daily_cap * days
 
@@ -280,11 +369,11 @@ class TaskPlannerService:
         return subtasks
 
 
+_planner_service = None
+
+
 def get_planner_service() -> TaskPlannerService:
     global _planner_service
     if _planner_service is None:
         _planner_service = TaskPlannerService()
     return _planner_service
-
-
-_planner_service = None

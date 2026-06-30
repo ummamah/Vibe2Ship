@@ -27,6 +27,14 @@ class SubTask(BaseModel):
     dependencies: List[str] = Field(default_factory=list, description="Names of subtasks that must be completed before this one")
 
 
+class SubtaskDetail(BaseModel):
+    """Detail of a subtask including time slot assignment."""
+    name: str = Field(..., description="Specific subtask name, e.g., 'Ch 1: Multiplication'")
+    start_time: str = Field(..., description="Start time in HH:MM format (24hr)")
+    end_time: str = Field(..., description="End time in HH:MM format (24hr)")
+    duration_minutes: int = Field(..., ge=15, le=480)
+
+
 class UserPreferences(BaseModel):
     """User's daily schedule preferences for optimal task distribution."""
     heavy_days: List[str] = Field(default_factory=list, description="Days of week with more study time, e.g., ['Monday', 'Wednesday']")
@@ -54,6 +62,7 @@ class TaskPlanRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=200, description="The overall task title")
     description: str = Field(default="", max_length=1000, description="Additional context about the task")
     deadline: datetime = Field(..., description="The deadline for the overall task")
+    deadline_time: str = Field(default="17:00", pattern="^([01]?[0-9]|2[0-3]):[0-5][0-9]$", description="Due time in 24hr format")
     start_date: Optional[datetime] = Field(default=None, description="When to start (defaults to tomorrow). If in the past, it will be capped to today.")
     subtasks: List[SubTask] = Field(..., min_length=1, description="Breakdown of the task into individual units of work")
     available_hours_per_day: int = Field(default=3, ge=1, le=8, description="Average hours per day available for this task")
@@ -95,7 +104,9 @@ class DailyChunk(BaseModel):
     """A single day's scheduled work."""
     date: datetime
     subtask_names: List[str]
+    subtask_details: List[SubtaskDetail] = Field(default_factory=list, description="Detailed subtask info with time slots")
     total_minutes: int
+    total_hours: int = Field(default=0, description="Total scheduled hours for this day")
     notes: str = Field(default="", description="AI-generated note for the day, e.g., 'Focus day' or 'Light day' or 'Catch-up buffer'")
     is_buffer: bool = Field(default=False)
     is_milestone: bool = Field(default=False, description="True if this day completes a dependency chain")

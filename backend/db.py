@@ -20,6 +20,10 @@ _study_materials_db: Dict[str, dict] = {}
 _chat_history_db: Dict[str, List[Dict]] = {}
 _session_history: List[dict] = {}
 
+# Auth collections (in-memory fallback)
+_users_db: Dict[str, dict] = {}
+_otps_db: Dict[str, dict] = {}
+
 
 def _init_firestore():
     global FIRESTORE_AVAILABLE
@@ -81,6 +85,10 @@ def db_get_all(collection_name: str) -> List[Dict]:
             return list(_study_materials_db.values())
         elif collection_name == "session_history":
             return list(_session_history.values())
+        elif collection_name == "users":
+            return list(_users_db.values())
+        elif collection_name == "otps":
+            return list(_otps_db.values())
         return []
     docs = ref.stream()
     return [_fs_dict_to_py(d) for d in docs]
@@ -97,6 +105,8 @@ def db_get(collection_name: str, doc_id: str) -> Optional[Dict]:
             "documents": _documents_db,
             "study_materials": _study_materials_db,
             "session_history": _session_history,
+            "users": _users_db,
+            "otps": _otps_db,
         }
         return source.get(collection_name, {}).get(doc_id)
     doc = ref.document(doc_id).get()
@@ -119,6 +129,10 @@ def db_set(collection_name: str, doc_id: str, data: Dict):
             _study_materials_db[doc_id] = data
         elif collection_name == "session_history":
             _session_history[doc_id] = data
+        elif collection_name == "users":
+            _users_db[doc_id] = data
+        elif collection_name == "otps":
+            _otps_db[doc_id] = data
         return
     # Firestore write
     ref.document(doc_id).set(data)
@@ -135,6 +149,8 @@ def db_delete(collection_name: str, doc_id: str):
             "documents": _documents_db,
             "study_materials": _study_materials_db,
             "session_history": _session_history,
+            "users": _users_db,
+            "otps": _otps_db,
         }
         d = source.get(collection_name)
         if d and doc_id in d:

@@ -9,11 +9,18 @@ export interface SubTask {
   dependencies: string[]
 }
 
+export interface SubtaskDetail {
+  name: string
+  start_time: string  // HH:MM format
+  end_time: string   // HH:MM format
+  duration_minutes: number
+}
+
 export interface UserPreferences {
   heavy_days: string[]
   light_days: string[]
   preferred_time_start: string
-  preferred_time_end: string
+  preferred_end: string
   max_daily_minutes: number
   overlapping_tasks: boolean
 }
@@ -32,7 +39,9 @@ export interface TaskPlanRequest {
 export interface DailyChunk {
   date: string
   subtask_names: string[]
+  subtask_details: SubtaskDetail[]  // NEW: specific subtasks with times
   total_minutes: number
+  total_hours: number
   notes: string
   is_buffer: boolean
   is_milestone: boolean

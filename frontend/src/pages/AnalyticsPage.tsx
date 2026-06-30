@@ -1,12 +1,18 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { ClockIcon, BoltIcon } from '@heroicons/react/24/solid'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend
 } from 'recharts'
 import { focusService } from '../services/focusService'
+import {
+  hasRealFocusData,
+  getLast7DaysLog,
+  getFocusLog,
+  getFocusedSecondsForDate,
+} from '../utils/focusStorage'
 
-const studyData = [
+const demoData = [
   { day: 'Sun', Math: 0, Physics: 0, Chemistry: 0, English: 0 },
   { day: 'Mon', Math: 25, Physics: 15, Chemistry: 10, English: 0 },
   { day: 'Tue', Math: 30, Physics: 20, Chemistry: 15, English: 5 },
@@ -40,15 +46,24 @@ interface HistoryEntry {
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
-    const totalMinutes = payload.reduce((sum: number, p: any) => sum + p.value, 0)
+    const visible = payload.filter((p: any) => (p.value ?? 0) > 0)
+    if (visible.length === 0) {
+      return (
+        <div className="bg-dark-elevated border-2 border-primary/60 rounded-lg p-3 shadow-xl">
+          <p className="text-white font-bold mb-1">{label}</p>
+          <p className="text-gray-400 text-sm">No focus time recorded</p>
+        </div>
+      )
+    }
+    const totalMinutes = visible.reduce((sum: number, p: any) => sum + p.value, 0)
     return (
       <div className="bg-dark-elevated border-2 border-primary/60 rounded-lg p-3 shadow-xl">
         <p className="text-white font-bold mb-2">{label}</p>
         <div className="space-y-1">
-          {payload.map((item: any, index: number) => (
+          {visible.map((item: any, index: number) => (
             <div key={index} className="flex items-center gap-2 text-sm">
-              <div 
-                className="w-3 h-3 rounded-full" 
+              <div
+                className="w-3 h-3 rounded-full"
                 style={{ backgroundColor: item.color }}
               />
               <span className="text-gray-300">{item.name}:</span>
@@ -67,12 +82,14 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 const CustomLegend = (props: any) => {
   const { payload } = props
+  if (!payload || payload.length === 0) return null
+  // Only show legend entries that had data on the chart, or always show legend
   return (
     <div className="flex flex-wrap gap-4 justify-end">
       {payload.map((entry: any, index: number) => (
         <div key={index} className="flex items-center gap-2">
-          <div 
-            className="w-4 h-4 rounded" 
+          <div
+            className="w-4 h-4 rounded"
             style={{ backgroundColor: entry.color }}
           />
           <span className="text-gray-300 text-sm">{entry.value}</span>
@@ -82,14 +99,25 @@ const CustomLegend = (props: any) => {
   )
 }
 
+const TOPIC_PALETTE = [
+  '#d97706',
+  '#fbbf24',
+  '#8b5a2b',
+  '#f59e0b',
+  '#a21caf',
+  '#0891b2',
+  '#16a34a',
+  '#dc2626',
+]
+
 export default function AnalyticsPage() {
   const [analytics, setAnalytics] = useState<any>(null)
   const [streak, setStreak] = useState<number>(0)
-  const [chartData] = useState<any[]>(studyData)
+  const [useRealData, setUseRealData] = useState<boolean>(false)
 
   useEffect(() => {
     fetchAnalytics()
-    fetchHistory()
+    setUseRealData(hasRealFocusData())
   }, [])
 
   const fetchAnalytics = async () => {
@@ -103,64 +131,85 @@ export default function AnalyticsPage() {
         total_sessions: 0,
         completion_rate: 0,
         average_session_length: 0,
-        most_active_topic: ''
+        most_active_topic: '',
       })
     }
   }
 
-  const fetchHistory = async () => {
-    try {
-      const data = await focusService.getHistory()
-      const historyData = data.history || []
-      calculateStreak(historyData)
-    } catch (err) {
-      console.error('Error fetching history:', err)
-      setStreak(0)
+  // Re-render chart when focus data changes in another tab or after a session completes.
+  const [focusSync, setFocusSync] = useState(0)
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key && e.key.startsWith('focus_log')) setFocusSync(n => n + 1)
     }
-  }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
 
-  const calculateStreak = (historyData: HistoryEntry[]) => {
-    if (!historyData || historyData.length === 0) {
-      setStreak(0)
-      return
-    }
+  useEffect(() => {
+    const log = getFocusLog()
+    const computed = computeStreakFromLog(log)
+    setStreak(computed)
+  }, [focusSync])
 
+  const computeStreakFromLog = (log: ReturnType<typeof getFocusLog>) => {
+    const MIN_SECONDS = 25 * 60
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    const minutesByDate = new Map<string, number>()
-
-    historyData.forEach(entry => {
-      entry.sessions.forEach(session => {
-        if (session.session_type === 'focus' && session.completed) {
-          const startDate = new Date(session.start_time)
-          const dateKey = startDate.toISOString().split('T')[0]
-          const minutes = session.actual_duration / 60
-          minutesByDate.set(dateKey, (minutesByDate.get(dateKey) || 0) + minutes)
-        }
-      })
-    })
-
     let streakCount = 0
-    let currentDate = new Date(today)
+    const cursor = new Date(today)
 
     for (let i = 0; i < 365; i++) {
-      const dateKey = currentDate.toISOString().split('T')[0]
-      const totalMinutes = minutesByDate.get(dateKey) || 0
+      const y = cursor.getFullYear()
+      const m = String(cursor.getMonth() + 1).padStart(2, '0')
+      const d = String(cursor.getDate()).padStart(2, '0')
+      const dateKey = `${y}-${m}-${d}`
+      const totalSeconds = log[dateKey]?.totalSeconds ?? 0
 
-      if (totalMinutes >= 25) {
+      if (totalSeconds >= MIN_SECONDS) {
         streakCount++
       } else if (i > 0) {
         break
       }
 
-      currentDate.setDate(currentDate.getDate() - 1)
+      cursor.setDate(cursor.getDate() - 1)
     }
 
-    setStreak(streakCount)
+    return streakCount
   }
 
-  const totalHours = analytics?.total_focus_hours || 0
+  const totalHours = useMemo(() => {
+    const log = getFocusLog()
+    const allSeconds = Object.values(log).reduce((sum, e) => sum + (e.totalSeconds ?? 0), 0)
+    return allSeconds / 3600
+  }, [focusSync])
+
+  // Build real chart data from local focus storage if available
+  const realChartData = useMemo(() => {
+    if (!hasRealFocusData()) return null
+    const days = getLast7DaysLog()
+    const log = getFocusLog()
+    const topicSet = new Set<string>()
+    Object.values(log).forEach(entry => {
+      Object.keys(entry.byTopic || {}).forEach(topic => topicSet.add(topic))
+    })
+    const topics = Array.from(topicSet).sort().slice(0, 8)
+    const rows = days.map(d => {
+      const row: Record<string, string | number> = { day: d.dayLabel }
+      for (const topic of topics) {
+        const secs = d.byTopic[topic] ?? 0
+        row[topic] = Math.round(secs / 60)
+      }
+      return row
+    })
+    return { rows, topics }
+  }, [focusSync])
+
+  const chartRows = realChartData ? realChartData.rows : demoData
+  const chartTopics = realChartData ? realChartData.topics : ['Math', 'Physics', 'Chemistry', 'English']
+  const paletteForReal = TOPIC_PALETTE.slice(0, Math.max(chartTopics.length, 1))
+  const getColor = (i: number) => paletteForReal[i % paletteForReal.length]
 
   return (
     <div className="pb-20 lg:pb-6">
@@ -185,7 +234,7 @@ export default function AnalyticsPage() {
             <ClockIcon className="h-10 w-10 icon-primary" />
           </div>
           <div className="h-1 w-full bg-dark-surface rounded-full overflow-hidden">
-            <div 
+            <div
               className="h-full bg-gradient-to-r from-primary to-primary-light shadow-glow"
               style={{ width: '100%' }}
             />
@@ -211,7 +260,7 @@ export default function AnalyticsPage() {
             <BoltIcon className="h-10 w-10 icon-primary" />
           </div>
           <div className="h-1 w-full bg-dark-surface rounded-full overflow-hidden">
-            <div 
+            <div
               className="h-full bg-gradient-to-r from-primary to-primary-light shadow-glow transition-all duration-500"
               style={{ width: `${Math.min(100, streak * 10)}%` }}
             />
@@ -219,22 +268,22 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      {/* 7-Day Study Time by Subject Chart */}
+      {/* 7-Day Study Time */}
       <div className="card-elevated">
         <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
           <BoltIcon className="h-6 w-6 icon-accent" />
           7-Day Study Time by Subject
         </h2>
-        
+
         <div className="h-96">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
-              data={chartData}
+              data={chartRows}
               margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
             >
-              <CartesianGrid 
-                strokeDasharray="3 3" 
-                stroke="rgba(217, 119, 6, 0.1)" 
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="rgba(217, 119, 6, 0.1)"
                 vertical={false}
               />
               <XAxis
@@ -251,9 +300,9 @@ export default function AnalyticsPage() {
                 axisLine={{ stroke: 'rgba(217, 119, 6, 0.3)' }}
                 tickLine={{ stroke: 'rgba(217, 119, 6, 0.5)' }}
                 tickMargin={10}
-                label={{ 
-                  value: 'Minutes', 
-                  angle: -90, 
+                label={{
+                  value: 'Minutes',
+                  angle: -90,
                   position: 'insideLeft',
                   fill: '#d97706',
                   fontSize: 14,
@@ -261,39 +310,21 @@ export default function AnalyticsPage() {
                 }}
               />
               <Tooltip content={<CustomTooltip />} />
-              <Legend 
-                content={<CustomLegend />} 
-                verticalAlign="top" 
+              <Legend
+                content={<CustomLegend />}
+                verticalAlign="top"
                 height={36}
               />
-              <Bar 
-                dataKey="Math" 
-                stackId="a" 
-                fill="#d97706"
-                radius={[0, 0, 4, 4]}
-                animationDuration={1000}
-              />
-              <Bar 
-                dataKey="Physics" 
-                stackId="a" 
-                fill="#fbbf24"
-                radius={[0, 0, 4, 4]}
-                animationDuration={1000}
-              />
-              <Bar 
-                dataKey="Chemistry" 
-                stackId="a" 
-                fill="#8b5a2b"
-                radius={[0, 0, 4, 4]}
-                animationDuration={1000}
-              />
-              <Bar 
-                dataKey="English" 
-                stackId="a" 
-                fill="#f59e0b"
-                radius={[0, 0, 4, 4]}
-                animationDuration={1000}
-              />
+              {chartTopics.map((topic, i) => (
+                <Bar
+                  key={topic}
+                  dataKey={topic}
+                  stackId="a"
+                  fill={getColor(i)}
+                  radius={[0, 0, 4, 4]}
+                  animationDuration={1000}
+                />
+              ))}
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -301,3 +332,5 @@ export default function AnalyticsPage() {
     </div>
   )
 }
+
+// Use the React hooks imported above.

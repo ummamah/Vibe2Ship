@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 export default function SettingsPage() {
   const [theme, setTheme] = useState<'light' | 'dark'>('dark')
-  const [alarmSound, setAlarmSound] = useState<string('default')
+  const [alarmSound, setAlarmSound] = useState<string>('default')
   const [blockDistractions, setBlockDistractions] = useState<boolean>(false)
   const [blockedUrl, setBlockedUrl] = useState<string>('')
 

@@ -8,6 +8,7 @@ export interface Task {
   title: string
   description: string
   deadline: string | null
+  deadline_time?: string  // Due time in HH:MM format (24hr)
   duration_minutes: number
   approximate_time_minutes?: number
   importance?: number
@@ -22,6 +23,7 @@ export interface Task {
   user_id?: string
   overall_score?: number
   ai_analysis?: AIAnalysis
+  use_ai_plan?: boolean
 }
 
 export interface AIAnalysis {
@@ -41,6 +43,7 @@ export interface CreateTaskPayload {
   title: string
   description?: string
   deadline?: string | null
+  deadline_time?: string  // Due time in HH:MM format (24hr)
   duration_minutes?: number
   approximate_time_minutes?: number
   priority?: string | null
@@ -48,6 +51,7 @@ export interface CreateTaskPayload {
   tags?: string[]
   energy_required?: string
   user_id?: string
+  use_ai_plan?: boolean
 }
 
 export const taskService = {
